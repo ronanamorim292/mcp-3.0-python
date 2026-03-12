@@ -47,24 +47,47 @@ for module in tool_modules:
 sse = SseServerTransport("/messages")
 
 async def handle_sse(scope, receive, send):
+    response_started = False
+
+    async def wrapped_send(message):
+        nonlocal response_started
+        if message["type"] == "http.response.start":
+            # Injetar headers anti-buffering
+            headers = list(message.get("headers", []))
+            headers.append((b"x-accel-buffering", b"no"))
+            headers.append((b"cache-control", b"no-cache, no-store, must-revalidate"))
+            message["headers"] = headers
+            await send(message)
+            response_started = True
+            
+            # Enviar padding IMEDIATAMENTE após os headers para forçar o flush do proxy
+            padding = b":" + b" " * 2048 + b"\n\n"
+            await send({
+                "type": "http.response.body",
+                "body": padding,
+                "more_body": True
+            })
+        else:
+            await send(message)
+
     try:
-        # O parametro sse.connect_sse gerencia o fluxo de stream
-        logger.info("Nova conexão SSE iniciada")
-        async with sse.connect_sse(scope, receive, send) as (read_stream, write_stream):
-            # No FastMCP, o servidor real fica em _server
+        logger.info("Iniciando conexão SSE com wrapper anti-buffering")
+        async with sse.connect_sse(scope, receive, wrapped_send) as (read_stream, write_stream):
             await mcp._server.run_async(read_stream, write_stream)
     except Exception as e:
-        logger.error(f"Erro Crítico no SSE: {e}")
+        logger.error(f"Erro no SSE: {e}")
         logger.error(traceback.format_exc())
-        # Tentar enviar um erro se o stream não tiver começado
-        try:
-            await send({
-                "type": "http.response.start",
-                "status": 500,
-                "headers": [(b"content-type", b"text/plain")],
-            })
-            await send({ "type": "http.response.body", "body": str(e).encode() })
-        except: pass
+        # Se não começou a resposta, tenta avisar o erro
+        if not response_started:
+            try:
+                await send({
+                    "type": "http.response.start",
+                    "status": 500,
+                    "headers": [(b"content-type", b"text/plain")],
+                })
+                await send({"type": "http.response.body", "body": str(e).encode()})
+            except: pass
+        pass
 
 async def handle_messages(scope, receive, send):
     logger.info("Nova mensagem POST recebida em /messages")
