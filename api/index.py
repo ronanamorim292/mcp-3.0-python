@@ -1,25 +1,32 @@
 import os
 import sys
 
-# Ajustar PYTHONPATH
-root_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Forçar o caminho raiz do projeto no PYTHONPATH para a Vercel encontrar a pasta 'tools'
+current_dir = os.path.dirname(os.path.abspath(__file__))
+root_path = os.path.dirname(current_dir)
 if root_path not in sys.path:
     sys.path.insert(0, root_path)
 
 from mcp.server.fastmcp import FastMCP
-from dotenv import load_dotenv
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
-from starlette.routing import Route
+from starlette.routing import Route, Mount
 from starlette.middleware.cors import CORSMiddleware
-from mcp.server.sse import SseServerTransport
+from dotenv import load_dotenv
 
-load_dotenv()
+# Carregar o .env se ele existir (na Vercel ele usará as variáveis de ambiente do sistema)
+load_dotenv(os.path.join(root_path, ".env"))
 
-# Inicializar FastMCP
-mcp = FastMCP("MCP-3.0")
+# Inicializar o servidor MCP
+mcp = FastMCP("mcp-3-0-python")
 
-# Carregar ferramentas (com tratamento de erro individual)
+# Adicionar uma ferramenta de teste rápido para validar conexões
+@mcp.tool()
+async def ping() -> str:
+    """Ferramenta de teste para verificar se o servidor online está respondendo."""
+    return "pong! O servidor online está funcionando perfeitamente."
+
+# Carregar os módulos de ferramentas
 tool_modules = [
     "tools.api", "tools.easypanel", "tools.github", "tools.appwrite",
     "tools.n8n", "tools.evolution", "tools.system", "tools.search",
@@ -27,7 +34,6 @@ tool_modules = [
     "tools.memory", "tools.secrets"
 ]
 
-load_errors = []
 for module_name in tool_modules:
     try:
         module = __import__(module_name, fromlist=["*"])
@@ -35,48 +41,41 @@ for module_name in tool_modules:
         func_name = f"register_{short_name}_tools"
         if short_name == "mercadopago": func_name = "register_mp_tools"
         register_func = getattr(module, func_name, None)
-        if register_func: register_func(mcp)
+        if register_func:
+            register_func(mcp)
     except Exception as e:
-        load_errors.append(f"{module_name}: {str(e)}")
+        print(f"Aviso: Não foi possível carregar {module_name}: {e}")
 
-# Configurar transporte SSE
-# Importante: O endereço de mensagens DEVE ser absoluto ou compatível com a Vercel
-sse = SseServerTransport("/api/messages") 
+# Gerar a aplicação SSE nativa do FastMCP
+mcp_app = mcp.sse_app()
 
-async def handle_sse(request):
-    try:
-        async with sse.connect_sse(request.scope, request.receive, request._send) as (read_stream, write_stream):
-            await mcp.server.run_async(read_stream, write_stream)
-    except Exception as e:
-        return JSONResponse({"error": "SSE connection failed", "details": str(e)}, status_code=500)
-
-async def handle_messages(request):
-    try:
-        await sse.handle_post_messages(request.scope, request.receive, request._send)
-    except Exception as e:
-        return JSONResponse({"error": "Message delivery failed", "details": str(e)}, status_code=500)
-
+# Criar uma rota de status amigável
 async def index_route(request):
+    tools = await mcp.list_tools()
     return JSONResponse({
         "status": "online",
-        "load_errors": load_errors,
-        "mcp_ready": True,
-        "available_tools": [t.name for t in await mcp.list_tools()] if not load_errors else "too_many_to_list"
+        "service": "MCP-3.0 Python (Vercel)",
+        "tools_loaded": len(tools),
+        "endpoints": ["/sse", "/messages", "/mcp"]
     })
 
-# Criar App Starlette com CORS
-app = Starlette(debug=True, routes=[
-    Route("/", index_route),
-    Route("/sse", handle_sse, methods=["GET"]),
-    Route("/mcp", handle_sse, methods=["GET"]),
-    Route("/api/messages", handle_messages, methods=["POST"]),
-    Route("/messages", handle_messages, methods=["POST"]), # Alias extra
-])
+# Rota alias para /mcp que usa o mesmo motor do /sse
+async def mcp_alias(request):
+    return await mcp_app(request.scope, request.receive, request._send)
 
+# Montar a aplicação final unindo tudo
+app = Starlette(
+    routes=[
+        Route("/", index_route),
+        Route("/mcp", mcp_alias, methods=["GET", "POST"]),
+        Mount("/", mcp_app) # Monta /sse e /messages automaticamente
+    ]
+)
+
+# Adicionar CORS para o n8n e outras plataformas
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["*"],
 )
