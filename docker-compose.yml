@@ -1,0 +1,16 @@
+services:
+  mcp-server:
+    build: .
+    ports:
+      - "8000:8000"
+    restart: always
+    environment:
+      - PYTHONUNBUFFERED=1
+      # Adicione suas variáveis de ambiente aqui ou use um arquivo .env
+      # - APPWRITE_ENDPOINT=${APPWRITE_ENDPOINT}
+      # - GITHUB_TOKEN=${GITHUB_TOKEN}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
