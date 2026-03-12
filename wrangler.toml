@@ -1,0 +1,11 @@
+name = "mcp-3-0-python"
+main = "api/index.py"
+compatibility_date = "2024-04-03"
+compatibility_flags = ["python_workers"]
+
+[vars]
+# Aqui você pode adicionar suas variáveis de ambiente ou usar o comando 'wrangler secret put'
+# APPWRITE_ENDPOINT = "..."
+
+[observability]
+enabled = true

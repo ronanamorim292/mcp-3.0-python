@@ -101,7 +101,9 @@ async def index_route(request):
         }
     })
 
-# Exportar 'app' para o Uvicorn
+# Exportar 'app' para o Uvicorn ou Cloudflare Workers
+# No Cloudflare Workers, a variável 'app' será usada automaticamente se for uma instância ASGI
 if __name__ == "__main__":
     import uvicorn
+    logger.info("Iniciando servidor local...")
     uvicorn.run(app, host="0.0.0.0", port=8000)

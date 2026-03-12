@@ -4,7 +4,6 @@ appwrite
 requests
 httpx
 starlette
-uvicorn
 sse-starlette
 httpx-sse
 jsonschema
