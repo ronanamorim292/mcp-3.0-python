@@ -26,5 +26,5 @@ HEALTHCHECK --interval=30s --timeout=3s \
   CMD curl -f http://localhost:8000/ || exit 1
 
 # Comando para rodar o servidor usando o entrypoint compatible com o MCP SSE
-# Adicionado --proxy-headers para suportar Portainer/EasyPanel e --http h11 para estabilidade SSE
-CMD ["uvicorn", "api.index:app", "--host", "0.0.0.0", "--port", "8000", "--http", "h11", "--proxy-headers"]
+# Adicionado --forwarded-allow-ips='*' para resolver de vez problemas de Host/Proxy
+CMD ["uvicorn", "api.index:app", "--host", "0.0.0.0", "--port", "8000", "--http", "h11", "--proxy-headers", "--forwarded-allow-ips='*'"]
