@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JARVIS | Intelligence System</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/jarvis.css">
+</head>
+<body>
+    <div class="jarvis-container">
+        <aside class="sidebar">
+            <div class="widget">
+                <h3 style="margin-bottom: 1rem; font-family: 'Orbitron'; color: var(--primary);">SYSTEM STATUS</h3>
+                <div class="skill-list" id="system-stats">
+                    <div class="skill-item">CPU: ONLINE</div>
+                    <div class="skill-item">NETWORK: ENCRYPTED</div>
+                    <div class="skill-item">MEMO: SYNCED</div>
+                </div>
+            </div>
+            
+            <div class="widget">
+                <h3 style="margin-bottom: 1rem; font-family: 'Orbitron'; color: var(--secondary);">SKILLS</h3>
+                <div class="skill-list" id="skills-list">
+                    <div class="skill-item">Web Search</div>
+                    <div class="skill-item">Git Control</div>
+                    <div class="skill-item">Email Access</div>
+                </div>
+            </div>
+        </aside>
+
+        <main class="main-view">
+            <header class="header">
+                <div class="logo">
+                    <h2 style="font-family: 'Orbitron'; letter-spacing: 5px;">JARVIS <span style="font-weight: 300; color: var(--primary);">3.0</span></h2>
+                </div>
+                <div class="status-indicator">
+                    <div class="pulse"></div>
+                    <span>CORE: ACTIVE</span>
+                </div>
+            </header>
+
+            <div class="chat-container">
+                <div class="messages" id="chat-messages">
+                    <div class="message system">
+                        <p style="color: var(--primary);">[SYSTEM]: Iniciando protocolos Jarvis... Conexão estável estabelecida.</p>
+                    </div>
+                </div>
+                <div class="user-input-area">
+                    <input type="text" id="user-input" placeholder="O que deseja, senhor?">
+                    <button id="send-btn" style="padding: 0 1.5rem; border-radius: 12px; background: var(--primary); border: none; font-weight: bold; cursor: pointer;">ENVIAR</button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const input = document.getElementById('user-input');
+        const messages = document.getElementById('chat-messages');
+
+        function addMessage(text, sender) {
+            const div = document.createElement('div');
+            div.className = `message ${sender}`;
+            div.style.padding = '10px';
+            div.style.borderRadius = '10px';
+            div.style.maxWidth = '80%';
+            div.style.marginBottom = '10px';
+            
+            if (sender === 'user') {
+                div.style.background = 'rgba(112, 0, 255, 0.2)';
+                div.style.alignSelf = 'flex-end';
+                div.innerText = text;
+            } else {
+                div.style.background = 'rgba(0, 242, 255, 0.05)';
+                div.style.alignSelf = 'flex-start';
+                div.innerHTML = `<span style="color: var(--primary); font-weight: bold;">JARVIS:</span> ${text}`;
+            }
+            
+            messages.appendChild(div);
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+        document.getElementById('send-btn').onclick = () => {
+            const val = input.value;
+            if(!val) return;
+            addMessage(val, 'user');
+            input.value = '';
+            
+            // Simulação de resposta enquanto o backend é montado
+            setTimeout(() => {
+                addMessage("Sim, senhor. Processando sua solicitação...", "jarvis");
+            }, 500);
+        }
+    </script>
+</body>
+</html>
