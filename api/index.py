@@ -52,7 +52,7 @@ sse = SseServerTransport("/messages")
 @app.route("/sse")
 async def handle_sse(request):
     async with sse.connect_sse(request.scope, request.receive, request._send) as (read_stream, write_stream):
-        await mcp.run_async(read_stream, write_stream)
+        await mcp.server.run_async(read_stream, write_stream)
 
 @app.route("/messages", methods=["POST"])
 async def handle_messages(request):
