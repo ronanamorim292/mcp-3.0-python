@@ -10,14 +10,15 @@ from mcp.server.fastmcp import FastMCP
 from dotenv import load_dotenv
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
-from starlette.routing import Route, Mount
+from starlette.routing import Route
+from mcp.server.sse import SseServerTransport
 
 load_dotenv()
 
 # Inicializar FastMCP
 mcp = FastMCP("MCP-3.0")
 
-# Lista de módulos de ferramentas para carregar com segurança
+# Lista de módulos de ferramentas
 tool_modules = [
     "tools.api", "tools.easypanel", "tools.github", "tools.appwrite",
     "tools.n8n", "tools.evolution", "tools.system", "tools.search",
@@ -26,49 +27,40 @@ tool_modules = [
 ]
 
 load_errors = []
-
 for module_name in tool_modules:
     try:
         module = __import__(module_name, fromlist=["*"])
-        # Cada módulo deve ter uma função register_..._tools(mcp)
-        # O nome da função segue o padrão: register_{nome_do_arquivo}_tools
         short_name = module_name.split(".")[-1]
-        # Mapeamento manual para nomes que não seguem o padrão exato se houver
         func_name = f"register_{short_name}_tools"
         if short_name == "mercadopago": func_name = "register_mp_tools"
-        
         register_func = getattr(module, func_name, None)
-        if register_func:
-            register_func(mcp)
-        else:
-            load_errors.append(f"Função {func_name} não encontrada em {module_name}")
+        if register_func: register_func(mcp)
     except Exception as e:
-        load_errors.append(f"Erro ao carregar {module_name}: {str(e)}")
+        load_errors.append(f"Erro em {module_name}: {str(e)}")
 
-# Se houver erros graves, vamos reportar na rota raiz
-@mcp.tool()
-async def health_check() -> str:
-    """Verificar o status do servidor e ferramentas."""
-    if not load_errors:
-        return "Todos os módulos carregados com sucesso."
-    return "Erros detectados:\n" + "\n".join(load_errors)
+# Configurar o transporte SSE explicitamente para evitar confusão de rotas
+sse = SseServerTransport("/messages")
 
-# Obter a aplicação SSE nativa
-mcp_sse_app = mcp.sse_app()
+async def handle_sse(request):
+    async with sse.connect_sse(request.scope, request.receive, request._send) as (read_stream, write_stream):
+        await mcp.server.run_async(read_stream, write_stream)
+
+async def handle_messages(request):
+    await sse.handle_post_messages(request.scope, request.receive, request._send)
 
 async def index_route(request):
     return JSONResponse({
-        "status": "online" if not load_errors else "degraded",
-        "service": "MCP-3.0 Python",
+        "status": "online",
         "load_errors": load_errors,
-        "endpoints": ["/sse", "/messages", "/mcp"]
+        "endpoints": ["/sse", "/mcp", "/messages"]
     })
 
-async def mcp_alias(request):
-    return await mcp_sse_app(request.scope, request.receive, request._send)
-
-app = Starlette(routes=[
+# Definir as rotas de forma explícita e manual para garantir que a Vercel as veja
+routes = [
     Route("/", index_route),
-    Route("/mcp", mcp_alias, methods=["GET", "POST"]),
-    Mount("/", mcp_sse_app)
-])
+    Route("/sse", handle_sse, methods=["GET"]),
+    Route("/mcp", handle_sse, methods=["GET"]),
+    Route("/messages", handle_messages, methods=["POST"]),
+]
+
+app = Starlette(debug=True, routes=routes)
