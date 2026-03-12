@@ -55,6 +55,7 @@ async def index(request):
     return JSONResponse({"status": "online", "message": "MCP-3.0 Python Server is running", "endpoints": ["/sse"]})
 
 @app.route("/sse", methods=["GET", "POST"])
+@app.route("/mcp", methods=["GET", "POST"])
 async def handle_sse(request):
     if request.method == "POST":
         return await sse.handle_post_messages(request.scope, request.receive, request._send)
