@@ -47,10 +47,20 @@ app = mcp.sse_app()
 async def add_mcp_headers(request, call_next):
     response = await call_next(request)
     path = request.url.path
-    if path in ["/sse", "/mcp", "/messages"]:
+    # Lista de prefixos que devem ter buffering desativado
+    mcp_endpoints = ("/sse", "/mcp", "/messages")
+    
+    if any(path.startswith(endpoint) for endpoint in mcp_endpoints):
         response.headers["x-accel-buffering"] = "no"
         response.headers["cache-control"] = "no-cache, no-store, must-revalidate"
         response.headers["connection"] = "keep-alive"
+        response.headers["proxy-connection"] = "keep-alive"
+        response.headers["content-encoding"] = "identity" # Evita Gzip buffering
+        
+        # Forçar content-type correto para o stream se necessário
+        if "sse" in path or "mcp" in path:
+            response.headers["content-type"] = "text/event-stream"
+    
     return response
 
 # Middleware de CORS
@@ -65,6 +75,7 @@ app.add_middleware(
 try:
     sse_route = next(r for r in app.routes if getattr(r, 'path', None) == "/sse")
     app.add_route("/mcp", sse_route.endpoint, methods=["GET"])
+    app.add_route("/mcp/", sse_route.endpoint, methods=["GET"])
 except Exception as e:
     logger.warning(f"Não foi possível criar alias /mcp: {e}")
 
