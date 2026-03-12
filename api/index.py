@@ -1,11 +1,19 @@
-from mcp.server.fastmcp import FastMCP
 import os
+import sys
+
+# Garantir que a pasta raiz esteja no PYTHONPATH para encontrar a pasta 'tools'
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+
+from mcp.server.fastmcp import FastMCP
 from dotenv import load_dotenv
+from starlette.applications import Starlette
+from starlette.responses import JSONResponse
+from starlette.routing import Route, Mount
 
 # Carregar variáveis de ambiente
 load_dotenv()
 
-# Inicializar FastMCP com transporte SSE para Web
+# Inicializar FastMCP
 mcp = FastMCP("MCP-3.0")
 
 # Importar registros de ferramentas
@@ -40,37 +48,24 @@ register_document_tools(mcp)
 register_memory_tools(mcp)
 register_secrets_tools(mcp)
 
-# Interface ASGI para a Vercel
-from mcp.server.fastmcp import Context
-from starlette.applications import Starlette
-from starlette.routing import Route
-from starlette.responses import JSONResponse
-from mcp.server.sse import SseServerTransport
+# Obter a aplicação SSE nativa do FastMCP
+mcp_sse_app = mcp.sse_app()
 
-app = Starlette()
-sse = SseServerTransport("/sse")
+# Criar a aplicação principal para incluir uma rota raiz amigável
+async def index_route(request):
+    return JSONResponse({
+        "status": "online",
+        "service": "MCP-3.0 Python",
+        "endpoints": ["/sse", "/messages", "/mcp"]
+    })
 
-@app.route("/")
-async def index(request):
-    return JSONResponse({"status": "online", "message": "MCP-3.0 Python Server is running", "endpoints": ["/sse"]})
+# Rota alias para /mcp que aponta para o mesmo handler do /sse
+async def mcp_alias(request):
+    # Encaminha a requisição para o app do MCP
+    return await mcp_sse_app(request.scope, request.receive, request._send)
 
-@app.route("/sse", methods=["GET", "POST"])
-@app.route("/mcp", methods=["GET", "POST"])
-async def handle_sse(request):
-    try:
-        if request.method == "POST":
-            return await sse.handle_post_messages(request.scope, request.receive, request._send)
-        
-        async with sse.connect_sse(request.scope, request.receive, request._send) as (read_stream, write_stream):
-            # Usando o método correto recomendado pelo FastMCP
-            await mcp.run_sse_async(read_stream, write_stream)
-    except Exception as e:
-        import traceback
-        return JSONResponse(
-            {"error": str(e), "traceback": traceback.format_exc()},
-            status_code=500
-        )
-
-# Exportar a app para a Vercel
-# Nota: Como o FastMCP é novo, essa implementação pode variar conforme a versão.
-# Se a Vercel não detectar, usaremos a abordagem de subir o servidor stdio via subprocess.
+app = Starlette(routes=[
+    Route("/", index_route),
+    Route("/mcp", mcp_alias, methods=["GET", "POST"]),
+    Mount("/", mcp_sse_app)
+])
