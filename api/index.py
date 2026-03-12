@@ -3,9 +3,8 @@ import sys
 import logging
 import traceback
 from mcp.server.fastmcp import FastMCP
-from starlette.applications import Starlette
-from starlette.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
+from starlette.responses import JSONResponse
 from dotenv import load_dotenv
 
 # Configurar logging
@@ -40,43 +39,51 @@ for module in tool_modules:
     except Exception as e:
         logger.error(f"Erro ao registrar {module}: {e}")
 
-# Criar app Starlette
-starlette_app = Starlette()
+# Obter a aplicação Starlette oficial do FastMCP que já tem os handlers SSE
+app = mcp.sse_app()
 
-# Middleware para desativar buffering no EasyPanel/Traefik
-@starlette_app.middleware("http")
+# Adicionar Middleware de Headers para estabilidade no EasyPanel (Anti-Buffering)
+@app.middleware("http")
 async def add_mcp_headers(request, call_next):
     response = await call_next(request)
-    if request.url.path in ["/sse", "/mcp", "/messages"]:
+    path = request.url.path
+    if path in ["/sse", "/mcp", "/messages"]:
         response.headers["x-accel-buffering"] = "no"
         response.headers["cache-control"] = "no-cache, no-store, must-revalidate"
         response.headers["connection"] = "keep-alive"
     return response
 
-starlette_app.add_middleware(
+# Middleware de CORS
+app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-@starlette_app.route("/sse")
-@starlette_app.route("/mcp")
-async def handle_sse(request):
-    return await mcp.handle_sse(request)
+# Adicionar alias /mcp para o endpoint /sse
+try:
+    sse_route = next(r for r in app.routes if getattr(r, 'path', None) == "/sse")
+    app.add_route("/mcp", sse_route.endpoint, methods=["GET"])
+except Exception as e:
+    logger.warning(f"Não foi possível criar alias /mcp: {e}")
 
-@starlette_app.route("/messages", methods=["POST"])
-async def handle_messages(request):
-    return await mcp.handle_messages(request)
-
-@starlette_app.route("/")
+# Adicionar rota de índice informativa
+@app.route("/")
 async def index_route(request):
     tools = await mcp.list_tools()
     return JSONResponse({
         "status": "online",
         "tools": len(tools),
-        "msg": "Use /sse ou /mcp para conectar"
+        "protocol": "mcp/sse",
+        "endpoints": {
+            "sse": "/sse",
+            "mcp_alias": "/mcp",
+            "messages": "/messages"
+        }
     })
 
-# O app final é o Starlette configurado para rodar no Uvicorn
-app = starlette_app
+# Exportar 'app' para o Uvicorn
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
