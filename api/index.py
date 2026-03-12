@@ -57,11 +57,19 @@ async def index(request):
 @app.route("/sse", methods=["GET", "POST"])
 @app.route("/mcp", methods=["GET", "POST"])
 async def handle_sse(request):
-    if request.method == "POST":
-        return await sse.handle_post_messages(request.scope, request.receive, request._send)
-    
-    async with sse.connect_sse(request.scope, request.receive, request._send) as (read_stream, write_stream):
-        await mcp.server.run_async(read_stream, write_stream)
+    try:
+        if request.method == "POST":
+            return await sse.handle_post_messages(request.scope, request.receive, request._send)
+        
+        async with sse.connect_sse(request.scope, request.receive, request._send) as (read_stream, write_stream):
+            # Usando o método correto recomendado pelo FastMCP
+            await mcp.run_sse_async(read_stream, write_stream)
+    except Exception as e:
+        import traceback
+        return JSONResponse(
+            {"error": str(e), "traceback": traceback.format_exc()},
+            status_code=500
+        )
 
 # Exportar a app para a Vercel
 # Nota: Como o FastMCP é novo, essa implementação pode variar conforme a versão.
