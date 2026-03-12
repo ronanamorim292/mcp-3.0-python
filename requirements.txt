@@ -1,0 +1,9 @@
+mcp
+fastmcp
+httpx
+python-dotenv
+appwrite
+async-timeout
+pydantic
+starlette
+uvicorn
