@@ -44,10 +44,15 @@ register_secrets_tools(mcp)
 from mcp.server.fastmcp import Context
 from starlette.applications import Starlette
 from starlette.routing import Route
+from starlette.responses import JSONResponse
 from mcp.server.sse import SseServerTransport
 
 app = Starlette()
 sse = SseServerTransport("/messages")
+
+@app.route("/")
+async def index(request):
+    return JSONResponse({"status": "online", "message": "MCP-3.0 Python Server is running", "endpoints": ["/sse", "/messages"]})
 
 @app.route("/sse")
 async def handle_sse(request):
