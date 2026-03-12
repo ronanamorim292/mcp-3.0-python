@@ -1,7 +1,7 @@
 import os
 import sys
 
-# Ajustar PYTHONPATH para Vercel encontrar a pasta 'tools'
+# Ajustar PYTHONPATH
 root_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if root_path not in sys.path:
     sys.path.insert(0, root_path)
@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.routing import Route
+from starlette.middleware.cors import CORSMiddleware
 from mcp.server.sse import SseServerTransport
 
 load_dotenv()
@@ -18,7 +19,7 @@ load_dotenv()
 # Inicializar FastMCP
 mcp = FastMCP("MCP-3.0")
 
-# Lista de módulos de ferramentas
+# Carregar ferramentas (com tratamento de erro individual)
 tool_modules = [
     "tools.api", "tools.easypanel", "tools.github", "tools.appwrite",
     "tools.n8n", "tools.evolution", "tools.system", "tools.search",
@@ -36,31 +37,46 @@ for module_name in tool_modules:
         register_func = getattr(module, func_name, None)
         if register_func: register_func(mcp)
     except Exception as e:
-        load_errors.append(f"Erro em {module_name}: {str(e)}")
+        load_errors.append(f"{module_name}: {str(e)}")
 
-# Configurar o transporte SSE explicitamente para evitar confusão de rotas
-sse = SseServerTransport("/messages")
+# Configurar transporte SSE
+# Importante: O endereço de mensagens DEVE ser absoluto ou compatível com a Vercel
+sse = SseServerTransport("/api/messages") 
 
 async def handle_sse(request):
-    async with sse.connect_sse(request.scope, request.receive, request._send) as (read_stream, write_stream):
-        await mcp.server.run_async(read_stream, write_stream)
+    try:
+        async with sse.connect_sse(request.scope, request.receive, request._send) as (read_stream, write_stream):
+            await mcp.server.run_async(read_stream, write_stream)
+    except Exception as e:
+        return JSONResponse({"error": "SSE connection failed", "details": str(e)}, status_code=500)
 
 async def handle_messages(request):
-    await sse.handle_post_messages(request.scope, request.receive, request._send)
+    try:
+        await sse.handle_post_messages(request.scope, request.receive, request._send)
+    except Exception as e:
+        return JSONResponse({"error": "Message delivery failed", "details": str(e)}, status_code=500)
 
 async def index_route(request):
     return JSONResponse({
         "status": "online",
         "load_errors": load_errors,
-        "endpoints": ["/sse", "/mcp", "/messages"]
+        "mcp_ready": True,
+        "available_tools": [t.name for t in mcp.list_tools()] if not load_errors else "too_many_to_list"
     })
 
-# Definir as rotas de forma explícita e manual para garantir que a Vercel as veja
-routes = [
+# Criar App Starlette com CORS
+app = Starlette(debug=True, routes=[
     Route("/", index_route),
     Route("/sse", handle_sse, methods=["GET"]),
     Route("/mcp", handle_sse, methods=["GET"]),
-    Route("/messages", handle_messages, methods=["POST"]),
-]
+    Route("/api/messages", handle_messages, methods=["POST"]),
+    Route("/messages", handle_messages, methods=["POST"]), # Alias extra
+])
 
-app = Starlette(debug=True, routes=routes)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["*"],
+)
