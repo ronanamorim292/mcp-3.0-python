@@ -4,6 +4,7 @@ import logging
 import traceback
 from mcp.server.fastmcp import FastMCP
 from starlette.middleware.cors import CORSMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.responses import JSONResponse
 from dotenv import load_dotenv
 
@@ -69,6 +70,12 @@ app.add_middleware(
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
+)
+
+# Adicionar TrustedHostMiddleware para evitar "Invalid Host header"
+app.add_middleware(
+    TrustedHostMiddleware, 
+    allowed_hosts=["*"]
 )
 
 # Adicionar alias /mcp para o endpoint /sse
