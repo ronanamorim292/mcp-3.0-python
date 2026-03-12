@@ -1,5 +1,11 @@
 import os
 import sys
+import logging
+import traceback
+
+# Configurar logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("mcp-server")
 
 # Ajustar PYTHONPATH
 root_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -33,18 +39,37 @@ for module in tool_modules:
         func = f"register_{short}_tools"
         if short == "mercadopago": func = "register_mp_tools"
         getattr(m, func)(mcp)
-    except: pass
+        logger.info(f"Ferramentas registradas: {module}")
+    except Exception as e:
+        logger.error(f"Erro ao registrar {module}: {e}")
 
-# Transporte SSE Manual (Mais estável para Vercel)
+# Transporte SSE Manual
 sse = SseServerTransport("/messages")
 
-async def handle_sse(request):
-    # O parametro sse.connect_sse gerencia o fluxo de stream
-    async with sse.connect_sse(request.scope, request.receive, request._send) as (read_stream, write_stream):
-        await mcp.server.run_async(read_stream, write_stream)
+async def handle_sse(scope, receive, send):
+    try:
+        # O parametro sse.connect_sse gerencia o fluxo de stream
+        logger.info("Nova conexão SSE iniciada")
+        async with sse.connect_sse(scope, receive, send) as (read_stream, write_stream):
+            # No FastMCP, mcp.server é o McpServer regular
+            # Precisamos garantir que ele está pronto
+            await mcp.server.run_async(read_stream, write_stream)
+    except Exception as e:
+        logger.error(f"Erro Crítico no SSE: {e}")
+        logger.error(traceback.format_exc())
+        # Tentar enviar um erro se o stream não tiver começado
+        try:
+            await send({
+                "type": "http.response.start",
+                "status": 500,
+                "headers": [(b"content-type", b"text/plain")],
+            })
+            await send({ "type": "http.response.body", "body": str(e).encode() })
+        except: pass
 
-async def handle_messages(request):
-    await sse.handle_post_messages(request.scope, request.receive, request._send)
+async def handle_messages(scope, receive, send):
+    logger.info("Nova mensagem POST recebida em /messages")
+    await sse.handle_post_messages(scope, receive, send)
 
 async def index_route(request):
     tools = await mcp.list_tools()
@@ -54,18 +79,31 @@ async def index_route(request):
         "msg": "Use /sse ou /mcp para conectar"
     })
 
-app = Starlette(
+starlette_app = Starlette(
     routes=[
         Route("/", index_route),
-        Route("/sse", handle_sse),
-        Route("/mcp", handle_sse),
-        Route("/messages", handle_messages, methods=["POST"]),
     ]
 )
 
-app.add_middleware(
+starlette_app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+async def app(scope, receive, send):
+    if scope["type"] == "lifespan":
+        await starlette_app(scope, receive, send)
+        return
+    
+    if scope["type"] == "http":
+        path = scope["path"]
+        if path in ["/sse", "/mcp"]:
+            await handle_sse(scope, receive, send)
+        elif path == "/messages":
+            await handle_messages(scope, receive, send)
+        else:
+            await starlette_app(scope, receive, send)
+    else:
+        await starlette_app(scope, receive, send)
