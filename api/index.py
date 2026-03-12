@@ -51,9 +51,8 @@ async def handle_sse(scope, receive, send):
         # O parametro sse.connect_sse gerencia o fluxo de stream
         logger.info("Nova conexão SSE iniciada")
         async with sse.connect_sse(scope, receive, send) as (read_stream, write_stream):
-            # No FastMCP, mcp.server é o McpServer regular
-            # Precisamos garantir que ele está pronto
-            await mcp.server.run_async(read_stream, write_stream)
+            # No FastMCP, o servidor real fica em _server
+            await mcp._server.run_async(read_stream, write_stream)
     except Exception as e:
         logger.error(f"Erro Crítico no SSE: {e}")
         logger.error(traceback.format_exc())
