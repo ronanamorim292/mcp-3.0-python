@@ -72,11 +72,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Adicionar TrustedHostMiddleware para evitar "Invalid Host header"
-app.add_middleware(
-    TrustedHostMiddleware, 
-    allowed_hosts=["*"]
-)
+# TrustedHostMiddleware removido para evitar "Invalid Host header" em ambientes de IP direto
 
 # Adicionar alias /mcp para o endpoint /sse
 try:
