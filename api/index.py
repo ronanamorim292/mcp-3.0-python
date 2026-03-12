@@ -48,20 +48,19 @@ from starlette.responses import JSONResponse
 from mcp.server.sse import SseServerTransport
 
 app = Starlette()
-sse = SseServerTransport("/messages")
+sse = SseServerTransport("/sse")
 
 @app.route("/")
 async def index(request):
-    return JSONResponse({"status": "online", "message": "MCP-3.0 Python Server is running", "endpoints": ["/sse", "/messages"]})
+    return JSONResponse({"status": "online", "message": "MCP-3.0 Python Server is running", "endpoints": ["/sse"]})
 
-@app.route("/sse")
+@app.route("/sse", methods=["GET", "POST"])
 async def handle_sse(request):
+    if request.method == "POST":
+        return await sse.handle_post_messages(request.scope, request.receive, request._send)
+    
     async with sse.connect_sse(request.scope, request.receive, request._send) as (read_stream, write_stream):
         await mcp.server.run_async(read_stream, write_stream)
-
-@app.route("/messages", methods=["POST"])
-async def handle_messages(request):
-    await sse.handle_post_messages(request.scope, request.receive, request._send)
 
 # Exportar a app para a Vercel
 # Nota: Como o FastMCP é novo, essa implementação pode variar conforme a versão.
