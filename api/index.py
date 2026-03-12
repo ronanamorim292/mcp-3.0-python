@@ -61,7 +61,7 @@ async def index_route(request):
         "status": "online",
         "load_errors": load_errors,
         "mcp_ready": True,
-        "available_tools": [t.name for t in mcp.list_tools()] if not load_errors else "too_many_to_list"
+        "available_tools": [t.name for t in await mcp.list_tools()] if not load_errors else "too_many_to_list"
     })
 
 # Criar App Starlette com CORS
